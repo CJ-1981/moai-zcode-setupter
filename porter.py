@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 LEGACY_MOAI_BIN = os.path.expanduser("~/.local/bin/moai-adk")
 CLONE_CACHE = os.path.expanduser("~/.moai-zcode-setupter/moai-adk-src")
 MOAI_REPO = "https://github.com/modu-ai/moai-adk.git"
-SETUPTER_VERSION = "0.4.0"
+SETUPTER_VERSION = "0.4.1"
 
 # Title of the 0.34-era CLAUDE.md; used to detect a legacy file that v3 init
 # preserved instead of replacing.
@@ -576,10 +576,11 @@ def setup_project(target: str, categories: set[str]) -> SetupReport:
 
 # Files renamed to <name>.off while suspended so Claude Code's startup scan
 # skips them. Hooks/settings/commands stay active (light bypass).
+# AGENTS.md is deliberately NOT suspended: ZCode reads it, and keeping it
+# costs Claude only ~20k while leaving ZCode's moai support fully intact.
 SUSPEND_PATHS = (
     ".claude/rules",
     "CLAUDE.md",
-    "AGENTS.md",
 )
 
 

@@ -349,10 +349,10 @@ class MainWindow(QMainWindow):
             self,
             f"{action} moai in Claude Code?",
             (
-                "Rename CLAUDE.md, AGENTS.md and .claude/rules to *.off so new "
+                "Rename CLAUDE.md and .claude/rules to *.off so new "
                 "Claude Code sessions start with a light context (for "
-                "context-demanding tasks)? Hooks and commands stay active. "
-                "Reversible with this same button."
+                "context-demanding tasks)? Hooks, commands and ZCode's "
+                "AGENTS.md stay active. Reversible with this same button."
                 if not suspended
                 else "Rename the *.off files back so Claude Code loads the full "
                 "moai instructions again?"

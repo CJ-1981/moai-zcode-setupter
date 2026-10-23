@@ -54,8 +54,9 @@ on Windows) before continuing.
 
 moai-adk's rule files add ~250k chars of always-loaded instructions in Claude
 Code. Before a context-size-demanding task, the **Suspend** button renames
-`CLAUDE.md`, `AGENTS.md` and `.claude/rules/` to `*.off` so the next Claude
-session starts light (hooks, commands and settings stay active). The same
+`CLAUDE.md` and `.claude/rules/` to `*.off` so the next Claude
+session starts light (hooks, commands and settings stay active; `AGENTS.md`
+is kept so ZCode's moai support is unaffected). The same
 button becomes **Resume** to rename them back. Only affects sessions started
 after the change.
 
