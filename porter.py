@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 LEGACY_MOAI_BIN = os.path.expanduser("~/.local/bin/moai-adk")
 CLONE_CACHE = os.path.expanduser("~/.moai-zcode-setupter/moai-adk-src")
 MOAI_REPO = "https://github.com/modu-ai/moai-adk.git"
-SETUPTER_VERSION = "0.2.2"
+SETUPTER_VERSION = "0.2.3"
 
 # Title of the 0.34-era CLAUDE.md; used to detect a legacy file that v3 init
 # preserved instead of replacing.
@@ -278,6 +278,11 @@ def convert_commands_from(src_root: str, target: str, report: SetupReport) -> No
     converted = set()
     for filename in sorted(os.listdir(src_root)):
         if not filename.endswith(".md"):
+            continue
+        # 0.34-era numbered commands (0-project.md, 1-plan.md, ...) that v3
+        # init preserved in the project; their v3 replacements exist.
+        if re.match(r"^\d+-", filename):
+            report.log(f"Skipped legacy 0.34 command file: {filename}")
             continue
         with open(os.path.join(src_root, filename)) as f:
             text = f.read()
