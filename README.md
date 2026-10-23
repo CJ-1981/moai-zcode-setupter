@@ -45,6 +45,15 @@ skills are never touched. Removing the Claude Code side (`.claude/`,
 `CLAUDE.md`, `.moai/`) is opt-in via checkboxes; `.moai/` holds your SPEC
 documents, so think twice before checking it.
 
+## Install (macOS)
+
+Download `MoAI-ZCode-Setupter-macos.zip` from the
+[latest release](https://github.com/CJ-1981/moai-zcode-setupter/releases/latest),
+unzip, and move `MoAI-ZCode-Setupter.app` to `/Applications`. The app is not
+notarized, so on first launch right-click → Open (or System Settings →
+Privacy & Security → "Open Anyway"). The MoAI-ADK CLI is still required
+externally — see Requirements.
+
 ## Requirements
 
 - macOS (tested on Apple Silicon); should work on Linux too
