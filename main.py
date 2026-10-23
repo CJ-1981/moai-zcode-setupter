@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
@@ -31,10 +32,41 @@ from porter import (
     REQUIRED_CATEGORIES,
     SETUPTER_VERSION,
     SKILL_CATEGORIES,
+    SetupReport,
+    _locate_moai,
+    _version_tuple,
     clean_project,
     find_moai,
+    get_latest_moai_version,
+    install_or_update_moai,
     setup_project,
 )
+
+
+class InstallWorker(QThread):
+    finished_report = Signal(object)
+    failed = Signal(str)
+
+    def run(self) -> None:
+        report = SetupReport(target="(moai-adk install)")
+        try:
+            ok = install_or_update_moai(report)
+        except Exception as exc:
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
+            return
+        if not ok:
+            self.failed.emit("installer did not produce a v3 moai binary")
+            return
+        self.finished_report.emit(report)
+
+
+class LatestVersionWorker(QThread):
+    """Fetch the latest moai-adk release tag in the background."""
+
+    got_latest = Signal(str)
+
+    def run(self) -> None:
+        self.got_latest.emit(get_latest_moai_version() or "unknown")
 
 
 class SetupWorker(QThread):
@@ -106,6 +138,14 @@ class MainWindow(QMainWindow):
         kind, moai_version = find_moai()
         moai_label = f" | moai-adk: {moai_version}" if moai_version else " | moai-adk: not found"
         self.setWindowTitle(f"MoAI-ADK → ZCode Setupter v{SETUPTER_VERSION}{moai_label}")
+
+        self.status_label = QLabel(f"moai-adk installed: {moai_version or 'not found'} | latest: checking ...")
+        self.latest_version: str | None = None
+        self.latest_worker = LatestVersionWorker()
+        self.latest_worker.got_latest.connect(self.on_latest)
+        self.latest_worker.start()
+
+        self.install_worker: InstallWorker | None = None
         self.resize(760, 540)
         self.worker: SetupWorker | None = None
         self.clean_worker: CleanWorker | None = None
@@ -121,6 +161,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self.folder_edit, stretch=1)
         row.addWidget(browse)
         layout.addLayout(row)
+        layout.addWidget(self.status_label)
 
         layout.addWidget(QLabel(
             "Skill categories to copy (foundation & workflow are always included):"))
@@ -162,11 +203,75 @@ class MainWindow(QMainWindow):
         if folder:
             self.folder_edit.setText(folder)
 
+    def on_latest(self, latest: str) -> None:
+        self.latest_version = None if latest == "unknown" else latest
+        kind, installed = find_moai()
+        self.status_label.setText(
+            f"moai-adk installed: {installed or 'not found'} | latest: {latest}"
+        )
+
+    def _moai_needs_install(self) -> tuple[bool, str]:
+        """(needs_install, reason) — v3 binary missing or older than latest."""
+        kind, installed, _path = _locate_moai()
+        if kind != "v3":
+            return True, "moai-adk is not installed (or only a legacy version was found)"
+        if self.latest_version and _version_tuple(installed) < _version_tuple(self.latest_version):
+            return True, f"installed {installed} is older than latest {self.latest_version}"
+        return False, ""
+
     def run_setup(self) -> None:
         target = self.folder_edit.text().strip()
         if not target:
             self.log.appendPlainText("Please choose a project folder first.")
             return
+        needs, reason = self._moai_needs_install()
+        if needs:
+            answer = QMessageBox.question(
+                self,
+                "Install moai-adk?",
+                f"{reason}.\n\nInstall/update moai-adk now using the official "
+                "installer (requires internet)?\n\nChoose 'Ignore' to continue anyway.",
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.Ignore
+                | QMessageBox.StandardButton.Cancel,
+            )
+            if answer == QMessageBox.StandardButton.Cancel:
+                return
+            if answer == QMessageBox.StandardButton.Yes:
+                self.log.appendPlainText(f"=== Installing/updating moai-adk ({reason}) ===")
+                self.run_btn.setEnabled(False)
+                self.clean_btn.setEnabled(False)
+                self.pending_setup_target = target
+                self.install_worker = InstallWorker()
+                self.install_worker.finished_report.connect(self.on_installed)
+                self.install_worker.failed.connect(self.on_install_fail)
+                self.install_worker.start()
+                return
+        self._start_setup(target)
+
+    def on_installed(self, report) -> None:
+        for line in report.steps:
+            self.log.appendPlainText(line)
+        for w in report.warnings:
+            self.log.appendPlainText(f"WARNING: {w}")
+        kind, installed = find_moai()
+        self.status_label.setText(
+            f"moai-adk installed: {installed or 'not found'} | latest: {self.latest_version or 'unknown'}"
+        )
+        self.log.appendPlainText("=== moai-adk install/update finished. ===")
+        self.install_worker = None
+        target = getattr(self, "pending_setup_target", None)
+        if target:
+            self.pending_setup_target = None
+            self._start_setup(target)
+
+    def on_install_fail(self, msg: str) -> None:
+        self.log.appendPlainText(f"moai-adk INSTALL FAILED: {msg}\n")
+        self.run_btn.setEnabled(True)
+        self.clean_btn.setEnabled(True)
+        self.install_worker = None
+
+    def _start_setup(self, target: str) -> None:
         categories = {cat for cat, cb in self.boxes.items() if cb.isChecked()}
         categories |= REQUIRED_CATEGORIES
         self.run_btn.setEnabled(False)

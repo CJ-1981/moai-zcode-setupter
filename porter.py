@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 LEGACY_MOAI_BIN = os.path.expanduser("~/.local/bin/moai-adk")
 CLONE_CACHE = os.path.expanduser("~/.moai-zcode-setupter/moai-adk-src")
 MOAI_REPO = "https://github.com/modu-ai/moai-adk.git"
-SETUPTER_VERSION = "0.2.3"
+SETUPTER_VERSION = "0.3.0"
 
 # Title of the 0.34-era CLAUDE.md; used to detect a legacy file that v3 init
 # preserved instead of replacing.
@@ -72,8 +72,14 @@ def find_moai() -> tuple[str | None, str]:
 
 def _locate_moai() -> tuple[str | None, str, str | None]:
     """Return (kind, version, binary path)."""
+    moai_candidates = [shutil.which("moai"), os.path.expanduser("~/.local/bin/moai")]
+    if os.name == "nt":
+        moai_candidates += [
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\moai\moai.exe"),
+            os.path.expanduser("~/.local/bin/moai.exe"),
+        ]
     candidates = {
-        "moai": [shutil.which("moai"), os.path.expanduser("~/.local/bin/moai")],
+        "moai": moai_candidates,
         "moai-adk": [shutil.which("moai-adk"), LEGACY_MOAI_BIN],
     }
     for name, paths in candidates.items():
@@ -84,16 +90,68 @@ def _locate_moai() -> tuple[str | None, str, str | None]:
             proc = _run([path, "--version"])
         except Exception:
             continue
-        m = re.search(r"(\d+)\.(\d+)", proc.stdout + proc.stderr)
+        m = re.search(r"(\d+\.\d+(?:\.\d+)?)", proc.stdout + proc.stderr)
         if not m:
             continue
-        major = int(m.group(1))
-        version = m.group(0)
+        major = int(m.group(1).split(".")[0])
+        version = m.group(1)
         if major >= 2:
             return "v3", version, path
         if name == "moai-adk":
             return "legacy", version, path
     return None, "", None
+
+
+def _version_tuple(v: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in re.findall(r"\d+", v)[:3])
+
+
+def get_latest_moai_version() -> str | None:
+    """Latest moai-adk release tag from the GitHub API (None if unreachable)."""
+    import json
+    import urllib.request
+
+    url = "https://api.github.com/repos/modu-ai/moai-adk/releases/latest"
+    req = urllib.request.Request(url, headers={"User-Agent": "moai-zcode-setupter"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            tag = json.load(resp).get("tag_name", "")
+    except Exception:
+        return None
+    return tag.lstrip("v") or None
+
+
+def moai_install_cmd() -> list[str]:
+    """Cross-platform official installer command."""
+    if os.name == "nt":
+        return [
+            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+            "irm https://adk.moai.kr/install.ps1 | iex",
+        ]
+    return ["bash", "-c", "curl -fsSL https://adk.mo.ai.kr/install.sh | bash"]
+
+
+def install_or_update_moai(report: SetupReport) -> bool:
+    """Run the official moai-adk installer. Returns True on success."""
+    before = _locate_moai()[1]
+    report.log(f"Running moai-adk installer (currently: {before or 'not installed'}) ...")
+    try:
+        proc = _run(moai_install_cmd(), timeout=600)
+    except Exception as exc:
+        report.warnings.append(f"Installer failed to run: {exc}")
+        return False
+    out = (proc.stdout + proc.stderr).strip()
+    if out:
+        report.log(f"installer output (tail):\n{out[-1200:]}")
+    after = _locate_moai()
+    if after[0] != "v3":
+        report.warnings.append(
+            "Installer finished but no v3 moai binary detected afterwards; "
+            "you may need to open a new terminal so PATH refreshes."
+        )
+        return False
+    report.log(f"moai-adk now: {after[1]}")
+    return True
 
 
 def ensure_clone(report: SetupReport) -> str | None:

@@ -62,13 +62,12 @@ externally — see Requirements.
 
 ## Requirements
 
-- macOS (tested on Apple Silicon); should work on Linux too
-- Python 3.12+ and [uv](https://docs.astral.sh/uv/)
-- MoAI-ADK installed as a CLI tool:
-
-  ```bash
-  uv tool install moai-adk
-  ```
+- macOS (tested on Apple Silicon) or Windows or Linux
+- Python 3.12+ and [uv](https://docs.astral.sh/uv/) (to run from source)
+- MoAI-ADK CLI — **optional**: the app detects the installed version and,
+  if it is missing or outdated, offers to install/update it automatically
+  using the official installer (curl script on macOS/Linux, PowerShell on
+  Windows) before running the setup.
 
 ## Run from source
 
