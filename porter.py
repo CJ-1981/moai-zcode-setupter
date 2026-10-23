@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 LEGACY_MOAI_BIN = os.path.expanduser("~/.local/bin/moai-adk")
 CLONE_CACHE = os.path.expanduser("~/.moai-zcode-setupter/moai-adk-src")
 MOAI_REPO = "https://github.com/modu-ai/moai-adk.git"
-SETUPTER_VERSION = "0.2.1"
+SETUPTER_VERSION = "0.2.2"
 
 # Title of the 0.34-era CLAUDE.md; used to detect a legacy file that v3 init
 # preserved instead of replacing.
@@ -61,11 +61,23 @@ def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
 
 
 def find_moai() -> tuple[str | None, str]:
-    """Return (kind, version): kind in {"v3", "legacy", None}."""
-    for name in ("moai", "moai-adk"):
-        path = shutil.which(name) or (
-            LEGACY_MOAI_BIN if name == "moai-adk" and os.path.exists(LEGACY_MOAI_BIN) else None
-        )
+    """Return (kind, version): kind in {"v3", "legacy", None}.
+
+    Explicit ~/.local/bin paths are checked because GUI apps launched from
+    Finder get a minimal PATH that doesn't include it.
+    """
+    kind, version, _ = _locate_moai()
+    return kind, version
+
+
+def _locate_moai() -> tuple[str | None, str, str | None]:
+    """Return (kind, version, binary path)."""
+    candidates = {
+        "moai": [shutil.which("moai"), os.path.expanduser("~/.local/bin/moai")],
+        "moai-adk": [shutil.which("moai-adk"), LEGACY_MOAI_BIN],
+    }
+    for name, paths in candidates.items():
+        path = next((p for p in paths if p and os.path.isfile(p) and os.access(p, os.X_OK)), None)
         if not path:
             continue
         try:
@@ -78,10 +90,10 @@ def find_moai() -> tuple[str | None, str]:
         major = int(m.group(1))
         version = m.group(0)
         if major >= 2:
-            return "v3", version
+            return "v3", version, path
         if name == "moai-adk":
-            return "legacy", version
-    return None, ""
+            return "legacy", version, path
+    return None, "", None
 
 
 def ensure_clone(report: SetupReport) -> str | None:
@@ -179,19 +191,34 @@ def convert_command(text: str, filename: str) -> str:
 
 SKILL_CATEGORIES = {
     "foundation": "moai-foundation-* (TRUST-5, SPEC-First TDD core) — required",
-    "workflow": "moai-workflow-* (spec/testing/docs workflow) — required",
-    "domain": "moai-domain-* (backend/frontend/database/uiux)",
-    "lang": "moai-lang-* (programming languages)",
-    "platform": "moai-platform-* (auth0, supabase, vercel, ...)",
-    "library": "moai-library-* (mermaid, nextra, shadcn)",
-    "mcp": "moai-mcp-* (figma, notion)",
+    "workflow": "moai-workflow-* (spec/testing workflow + core agents) — required",
+    "domain": "moai-domain-* (backend/frontend/database/design)",
+    "ref": "moai-ref-* (reference playbooks: security, testing, patterns)",
+    # v3 no longer ships these; kept for legacy (v0.x) installs only.
+    "lang": "moai-lang-* (languages, legacy v0.x only)",
+    "platform": "moai-platform-* (supabase/vercel/..., legacy v0.x only)",
+    "library": "moai-library-* (mermaid/nextra/..., legacy v0.x only)",
+    "mcp": "moai-mcp-* (figma/notion, legacy v0.x only)",
 }
 REQUIRED_CATEGORIES = {"foundation", "workflow"}
+
+# Core single-instance v3 skills (no category prefix beyond "moai-");
+# always included alongside the required categories.
+CORE_SINGLE_SKILLS = {
+    "moai",
+    "moai-factory-foreman",
+    "moai-harness-learner",
+    "moai-jev-skill-suggestion",
+    "moai-lane-watchdog",
+    "moai-meta-harness",
+}
 
 
 def _skill_category(name: str) -> str | None:
     if not name.startswith("moai-"):
         return None
+    if name in CORE_SINGLE_SKILLS:
+        return "workflow"
     rest = name.removeprefix("moai-")
     for cat in SKILL_CATEGORIES:
         if rest.startswith(cat + "-"):
@@ -398,11 +425,10 @@ def setup_project(target: str, categories: set[str]) -> SetupReport:
     if not os.path.exists(os.path.join(target, ".git")):
         report.warnings.append("Target is not a git repository root (no .git found).")
 
-    kind, version = find_moai()
+    kind, version, binpath = _locate_moai()
 
     if kind == "v3":
         report.log(f"Found moai-adk v3 binary ({version}); running moai init ...")
-        binpath = shutil.which("moai") or shutil.which("moai-adk")
         proc = _run([binpath, "init", "--non-interactive", "--force"], cwd=target)
         out = (proc.stdout + proc.stderr).strip()
         if out:
