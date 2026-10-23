@@ -41,6 +41,15 @@ A small ZCode section is appended to `.gitignore`: ported skills and
 `AGENTS.md` are tracked (they are project workflow assets), while local state
 and secret patterns under `.zcode/skills/` are ignored.
 
+### Auto install/update of moai-adk
+
+The app checks the installed moai-adk version against the latest GitHub
+release. If it is missing or outdated, running setup offers to install or
+update it via the official installer (curl script on macOS/Linux, PowerShell
+on Windows) before continuing.
+
+![Install prompt](docs/screenshot-install.png)
+
 ### Clean / uninstall
 
 ![Clean dialog](docs/screenshot-clean.png)
