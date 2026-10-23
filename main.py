@@ -35,11 +35,15 @@ from porter import (
     SetupReport,
     _locate_moai,
     _version_tuple,
+    claude_running,
+    claude_suspended,
     clean_project,
     find_moai,
     get_latest_moai_version,
     install_or_update_moai,
+    resume_moai_claude,
     setup_project,
+    suspend_moai_claude,
 )
 
 
@@ -186,8 +190,11 @@ class MainWindow(QMainWindow):
         self.run_btn.clicked.connect(self.run_setup)
         self.clean_btn = QPushButton("Clean / remove moai files ...")
         self.clean_btn.clicked.connect(self.run_clean)
+        self.suspend_btn = QPushButton("Suspend moai in Claude Code")
+        self.suspend_btn.clicked.connect(self.toggle_suspend)
         buttons.addWidget(self.run_btn, stretch=1)
         buttons.addWidget(self.clean_btn)
+        buttons.addWidget(self.suspend_btn)
         layout.addLayout(buttons)
 
         self.log = QPlainTextEdit()
@@ -202,6 +209,7 @@ class MainWindow(QMainWindow):
         folder = QFileDialog.getExistingDirectory(self, "Choose target project folder")
         if folder:
             self.folder_edit.setText(folder)
+            self._refresh_suspend_label()
 
     def on_latest(self, latest: str) -> None:
         self.latest_version = None if latest == "unknown" else latest
@@ -325,6 +333,51 @@ class MainWindow(QMainWindow):
         self.run_btn.setEnabled(True)
         self.clean_btn.setEnabled(True)
         self.clean_worker = None
+
+    def toggle_suspend(self) -> None:
+        target = self.folder_edit.text().strip()
+        if not target:
+            self.log.appendPlainText("Please choose a project folder first.")
+            return
+        suspended = claude_suspended(target)
+        action = "Resume" if suspended else "Suspend"
+        if claude_running():
+            self.log.appendPlainText(
+                f"NOTE: a 'claude' process appears to be running. {action} only "
+                "affects sessions started AFTER this change.")
+        answer = QMessageBox.question(
+            self,
+            f"{action} moai in Claude Code?",
+            (
+                "Rename CLAUDE.md, AGENTS.md and .claude/rules to *.off so new "
+                "Claude Code sessions start with a light context (for "
+                "context-demanding tasks)? Hooks and commands stay active. "
+                "Reversible with this same button."
+                if not suspended
+                else "Rename the *.off files back so Claude Code loads the full "
+                "moai instructions again?"
+            ),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        report = SetupReport(target=target)
+        (resume_moai_claude if suspended else suspend_moai_claude)(target, report)
+        for line in report.steps:
+            self.log.appendPlainText(line)
+        for w in report.warnings:
+            self.log.appendPlainText(f"WARNING: {w}")
+        self._refresh_suspend_label()
+        self.log.appendPlainText("")
+
+    def _refresh_suspend_label(self) -> None:
+        target = self.folder_edit.text().strip()
+        if not target:
+            return
+        self.suspend_btn.setText(
+            "Resume moai in Claude Code"
+            if claude_suspended(target)
+            else "Suspend moai in Claude Code"
+        )
 
     def on_fail(self, msg: str) -> None:
         self.log.appendPlainText(f"FAILED: {msg}\n")

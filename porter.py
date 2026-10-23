@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 LEGACY_MOAI_BIN = os.path.expanduser("~/.local/bin/moai-adk")
 CLONE_CACHE = os.path.expanduser("~/.moai-zcode-setupter/moai-adk-src")
 MOAI_REPO = "https://github.com/modu-ai/moai-adk.git"
-SETUPTER_VERSION = "0.3.1"
+SETUPTER_VERSION = "0.4.0"
 
 # Title of the 0.34-era CLAUDE.md; used to detect a legacy file that v3 init
 # preserved instead of replacing.
@@ -568,6 +568,65 @@ def setup_project(target: str, categories: set[str]) -> SetupReport:
 
     update_gitignore(target, report)
     return report
+
+
+# ---------------------------------------------------------------------------
+# Suspend / resume moai in Claude Code (context-pressure relief)
+# ---------------------------------------------------------------------------
+
+# Files renamed to <name>.off while suspended so Claude Code's startup scan
+# skips them. Hooks/settings/commands stay active (light bypass).
+SUSPEND_PATHS = (
+    ".claude/rules",
+    "CLAUDE.md",
+    "AGENTS.md",
+)
+
+
+def claude_suspended(target: str) -> bool:
+    """True if any suspend marker (.off) exists in the project."""
+    return any(
+        os.path.exists(os.path.join(target, p + ".off")) for p in SUSPEND_PATHS
+    )
+
+
+def claude_running() -> bool:
+    """Best-effort check for a running Claude Code process."""
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-fl", "claude"], capture_output=True, text=True, timeout=10
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+def suspend_moai_claude(target: str, report: SetupReport) -> None:
+    if claude_suspended(target):
+        report.warnings.append("Already suspended; nothing to do.")
+        return
+    for p in SUSPEND_PATHS:
+        src = os.path.join(target, p)
+        if os.path.exists(src):
+            os.rename(src, src + ".off")
+            report.log(f"Renamed {p} -> {p}.off")
+    report.log(
+        "Suspended. Start a NEW Claude Code session to get the light context; "
+        "rename back (Resume button) before doing moai workflow work."
+    )
+
+
+def resume_moai_claude(target: str, report: SetupReport) -> None:
+    if not claude_suspended(target):
+        report.warnings.append("Not suspended; nothing to do.")
+        return
+    for p in SUSPEND_PATHS:
+        src = os.path.join(target, p)
+        off = src + ".off"
+        if os.path.exists(off):
+            os.rename(off, src)
+            report.log(f"Renamed {p}.off -> {p}")
+    report.log("Resumed. New Claude Code sessions load the full moai instructions again.")
 
 
 # ---------------------------------------------------------------------------

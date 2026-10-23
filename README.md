@@ -50,6 +50,15 @@ on Windows) before continuing.
 
 ![Install prompt](docs/screenshot-install.png)
 
+### Suspend / resume moai in Claude Code
+
+moai-adk's rule files add ~250k chars of always-loaded instructions in Claude
+Code. Before a context-size-demanding task, the **Suspend** button renames
+`CLAUDE.md`, `AGENTS.md` and `.claude/rules/` to `*.off` so the next Claude
+session starts light (hooks, commands and settings stay active). The same
+button becomes **Resume** to rename them back. Only affects sessions started
+after the change.
+
 ### Clean / uninstall
 
 ![Clean dialog](docs/screenshot-clean.png)
