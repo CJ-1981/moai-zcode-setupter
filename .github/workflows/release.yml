@@ -37,3 +37,32 @@ jobs:
         with:
           files: dist/MoAI-ZCode-Setupter-macos.zip
           generate_release_notes: true
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build .exe with PyInstaller
+        run: >
+          uv run pyinstaller main.py
+          --name "MoAI-ZCode-Setupter"
+          --windowed --onefile --clean -y
+
+      - name: Zip .exe
+        shell: pwsh
+        run: Compress-Archive -Path dist/MoAI-ZCode-Setupter.exe -DestinationPath dist/MoAI-ZCode-Setupter-windows.zip
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MoAI-ZCode-Setupter-windows.zip
+          generate_release_notes: true
