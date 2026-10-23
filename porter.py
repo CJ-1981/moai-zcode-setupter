@@ -32,6 +32,11 @@ from dataclasses import dataclass, field
 LEGACY_MOAI_BIN = os.path.expanduser("~/.local/bin/moai-adk")
 CLONE_CACHE = os.path.expanduser("~/.moai-zcode-setupter/moai-adk-src")
 MOAI_REPO = "https://github.com/modu-ai/moai-adk.git"
+SETUPTER_VERSION = "0.2.1"
+
+# Title of the 0.34-era CLAUDE.md; used to detect a legacy file that v3 init
+# preserved instead of replacing.
+LEGACY_CLAUDE_MARKER = "Mr. Alfred Execution Directive"
 
 
 @dataclass
@@ -195,11 +200,16 @@ def _skill_category(name: str) -> str | None:
 
 
 def copy_skills_from(src_root: str, target: str, categories: set[str], report: SetupReport) -> None:
-    """Copy moai skills from a .claude/skills (or templates) root."""
+    """Copy moai skills from a .claude/skills (or templates) root.
+
+    Also removes stale moai-* skills in .zcode/skills/ that no longer exist
+    in the source (e.g. 0.34-era skills after upgrading to v3).
+    """
     dst_root = os.path.join(target, ".zcode", "skills")
     if not os.path.isdir(src_root):
         report.warnings.append(f"Skills source not found: {src_root}")
         return
+    source_names = set()
     for name in sorted(os.listdir(src_root)):
         cat = _skill_category(name)
         if cat is None:  # uncategorized (e.g. the "moai" dispatcher is handled too)
@@ -208,6 +218,7 @@ def copy_skills_from(src_root: str, target: str, categories: set[str], report: S
             continue
         if cat not in categories and cat not in REQUIRED_CATEGORIES:
             continue
+        source_names.add(name)
         src = os.path.join(src_root, name)
         dst = os.path.join(dst_root, name)
         if os.path.isdir(src):
@@ -219,6 +230,16 @@ def copy_skills_from(src_root: str, target: str, categories: set[str], report: S
                 with open(skill_md, "w") as f:
                     f.write(clean_skill_md(text))
             report.copied_skills.append(name)
+    # Drop stale moai-* skills (from an older moai-adk generation) that the
+    # current source no longer ships. Never touches non-moai skills.
+    stale = []
+    if os.path.isdir(dst_root):
+        for name in sorted(os.listdir(dst_root)):
+            if name.startswith("moai-") and name not in source_names:
+                shutil.rmtree(os.path.join(dst_root, name), ignore_errors=True)
+                stale.append(name)
+    if stale:
+        report.log(f"Removed {len(stale)} stale skills: {', '.join(stale)}")
     report.log(f"Copied {len(report.copied_skills)} skills to .zcode/skills/")
 
 
@@ -227,6 +248,7 @@ def convert_commands_from(src_root: str, target: str, report: SetupReport) -> No
     if not os.path.isdir(src_root):
         report.warnings.append(f"Commands source not found: {src_root}")
         return
+    converted = set()
     for filename in sorted(os.listdir(src_root)):
         if not filename.endswith(".md"):
             continue
@@ -238,6 +260,16 @@ def convert_commands_from(src_root: str, target: str, report: SetupReport) -> No
         with open(os.path.join(skill_dir, "SKILL.md"), "w") as f:
             f.write(convert_command(text, filename))
         report.converted_commands.append(f"moai-cmd-{slug}")
+        converted.add(f"moai-cmd-{slug}")
+    # Drop stale moai-cmd-* skills (e.g. 0.34-era numbered commands).
+    stale = []
+    if os.path.isdir(dst_root):
+        for name in sorted(os.listdir(dst_root)):
+            if name.startswith("moai-cmd-") and name not in converted:
+                shutil.rmtree(os.path.join(dst_root, name), ignore_errors=True)
+                stale.append(name)
+    if stale:
+        report.log(f"Removed {len(stale)} stale command skills: {', '.join(stale)}")
     report.log(
         f"Converted {len(report.converted_commands)} commands to skills: "
         + ", ".join(report.converted_commands)
@@ -278,6 +310,66 @@ def update_gitignore(target: str, report: SetupReport) -> None:
             f.write("\n")
         f.write("\n" + ZCODE_GITIGNORE_BLOCK)
     report.log("Appended ZCode section to .gitignore (skills tracked, local state/secrets ignored)")
+
+
+AGENTS_NOTE = (
+    "<!-- Derived from CLAUDE.md by MoAI-ZCode-Setupter for ZCode. `/moai <cmd>` "
+    "slash commands map to the `moai-cmd-*` skills in .zcode/skills/. -->\n\n"
+)
+
+
+def derive_agents_md(target: str, report: SetupReport) -> None:
+    """(Re)build AGENTS.md from the project's CLAUDE.md if it is stale."""
+    agents = os.path.join(target, "AGENTS.md")
+    claude = os.path.join(target, "CLAUDE.md")
+    if not os.path.isfile(claude):
+        return
+    with open(claude) as f:
+        text = f.read()
+    if os.path.isfile(agents):
+        with open(agents) as f:
+            current = f.read()
+        if LEGACY_CLAUDE_MARKER not in text and LEGACY_CLAUDE_MARKER not in current:
+            report.log("AGENTS.md already present and current; left as is.")
+            return
+    with open(agents, "w") as f:
+        f.write(AGENTS_NOTE + text)
+    report.log("Created/refreshed AGENTS.md (derived from project CLAUDE.md)")
+
+
+def refresh_legacy_claude_md(target: str, binpath: str, report: SetupReport) -> None:
+    """If v3 init preserved a 0.34-era CLAUDE.md, replace it with the v3 one.
+
+    v3 init keeps an existing CLAUDE.md, so projects ported in the 0.34 days
+    keep outdated instructions. The old file is backed up as
+    CLAUDE.md.moai034.bak before replacement.
+    """
+    claude = os.path.join(target, "CLAUDE.md")
+    if not os.path.isfile(claude):
+        return
+    with open(claude) as f:
+        text = f.read()
+    if LEGACY_CLAUDE_MARKER not in text:
+        return
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="moai-fresh-") as tmp:
+        _run(["git", "init", "-q"], cwd=tmp)
+        proc = _run([binpath, "init", "--non-interactive"], cwd=tmp)
+        fresh = os.path.join(tmp, "CLAUDE.md")
+        if proc.returncode != 0 or not os.path.isfile(fresh):
+            report.warnings.append(
+                "Project CLAUDE.md is the legacy 0.34 version and a fresh v3 "
+                "copy could not be generated; left as is."
+            )
+            return
+        backup = os.path.join(target, "CLAUDE.md.moai034.bak")
+        if not os.path.exists(backup):
+            shutil.copy2(claude, backup)
+        shutil.copy2(fresh, claude)
+    report.log(
+        "Replaced legacy 0.34 CLAUDE.md with v3 version (old file: CLAUDE.md.moai034.bak)"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -330,21 +422,8 @@ def setup_project(target: str, categories: set[str]) -> SetupReport:
             report.log("Project had no skills; falling back to ~/.claude/skills")
             copy_skills_from(user_skills, target, categories, report)
         convert_commands_from(src_cmds, target, report)
-        if os.path.isfile(os.path.join(target, "AGENTS.md")):
-            report.log("AGENTS.md already created by moai init; left as is.")
-        elif os.path.isfile(os.path.join(target, "CLAUDE.md")):
-            # v3 only writes AGENTS.md for the gpt/both harness; derive it for
-            # ZCode from the project's CLAUDE.md.
-            with open(os.path.join(target, "CLAUDE.md")) as f:
-                text = f.read()
-            note = (
-                "<!-- Derived from CLAUDE.md by MoAI-ZCode-Setupter for ZCode. "
-                "`/moai <cmd>` slash commands map to the `moai-cmd-*` skills in "
-                ".zcode/skills/. -->\n\n"
-            )
-            with open(os.path.join(target, "AGENTS.md"), "w") as f:
-                f.write(note + text)
-            report.log("Created AGENTS.md (derived from project CLAUDE.md)")
+        refresh_legacy_claude_md(target, binpath, report)
+        derive_agents_md(target, report)
     elif kind == "legacy":
         report.log(f"Found legacy moai-adk ({version}); running init ...")
         proc = _run([LEGACY_MOAI_BIN, "init", "-y", "--force"], cwd=target)

@@ -26,7 +26,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from porter import CLEAN_ITEMS, REQUIRED_CATEGORIES, SKILL_CATEGORIES, clean_project, setup_project
+from porter import (
+    CLEAN_ITEMS,
+    REQUIRED_CATEGORIES,
+    SETUPTER_VERSION,
+    SKILL_CATEGORIES,
+    clean_project,
+    find_moai,
+    setup_project,
+)
 
 
 class SetupWorker(QThread):
@@ -95,7 +103,9 @@ class CleanDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("MoAI-ADK → ZCode Project Setupter")
+        kind, moai_version = find_moai()
+        moai_label = f" | moai-adk: {moai_version}" if moai_version else " | moai-adk: not found"
+        self.setWindowTitle(f"MoAI-ADK → ZCode Setupter v{SETUPTER_VERSION}{moai_label}")
         self.resize(760, 540)
         self.worker: SetupWorker | None = None
         self.clean_worker: CleanWorker | None = None
