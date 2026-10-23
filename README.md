@@ -17,23 +17,29 @@ unchanged in the same repo.
 
 ## What it does on the chosen project folder
 
-1. Runs `moai-adk init -y --force` — scaffolds the `.moai/` spec/config tree
-   (safe on already-initialized projects: user content is preserved and a
-   backup is written to `.moai-backups/`).
-2. Creates `AGENTS.md` from MoAI-ADK's `CLAUDE.md` template (never overwrites
-   an existing one).
-3. Copies the selected `moai-*` skills into `.zcode/skills/`. Foundation and
-   workflow categories (TRUST-5, SPEC-First TDD, spec/testing workflow) are
-   always included; domain / lang / platform / library / mcp skills are
-   optional checkboxes.
-4. Converts the 5 Claude Code slash commands (`0-project`, `1-plan`, `2-run`,
-   `3-sync`, `9-feedback`) into ZCode skills:
-   - `!cmd` pre-execution lines → "Run in the project shell" instructions
-   - `@file` includes → "Read this file first" instructions
-   - `$ARGUMENTS` → a described placeholder
-5. Appends a small ZCode section to `.gitignore`: ported skills and
-   `AGENTS.md` are tracked (they are project workflow assets), while local
-   state and secret patterns under `.zcode/skills/` are ignored.
+Works with both generations of moai-adk:
+
+- **v3.x (current, Go binary)** — runs `moai init --non-interactive --force`,
+  then ports the project's `.claude/skills` (including the `moai` dispatcher
+  skill with its plan/run/sync workflows) and converts all 17 `.claude/commands/moai/*`
+  slash commands (`plan`, `run`, `sync`, `fix`, `loop`, `review`, `gate`,
+  `feedback`, ...) into ZCode skills. `AGENTS.md` is derived from the
+  project's `CLAUDE.md` if moai init didn't create one.
+- **v0.x/1.x (legacy Python package)** — runs `moai-adk init -y --force` and
+  ports templates from the uv site-packages path.
+- **No installation** — falls back to a shallow clone of the moai-adk GitHub
+  repo and does a read-only port (skills/commands only; you'll need to run
+  `moai init` yourself later for the `.moai/` scaffolding).
+
+In all cases, Claude-specific mechanics are rewritten for ZCode:
+
+- `!cmd` pre-execution lines → "Run in the project shell" instructions
+- `@file` includes → "Read this file first" instructions
+- `$ARGUMENTS` → a described placeholder
+
+A small ZCode section is appended to `.gitignore`: ported skills and
+`AGENTS.md` are tracked (they are project workflow assets), while local state
+and secret patterns under `.zcode/skills/` are ignored.
 
 ### Clean / uninstall
 
@@ -81,10 +87,11 @@ uv run python main.py
 4. Open the project in ZCode and run the workflow:
 
    ```
-   /moai-cmd-0-project     # one-time project setup / config merge
-   /moai-cmd-1-plan "..."  # write an EARS spec
-   /moai-cmd-2-run         # TDD implementation (red → green → refactor)
-   /moai-cmd-3-sync        # sync specs, docs and branch
+   /moai-cmd-project       # one-time project setup / config merge
+   /moai-cmd-plan "..."    # write an EARS spec
+   /moai-cmd-run           # TDD implementation (red → green → refactor)
+   /moai-cmd-sync          # sync specs, docs and branch
+   # v3 also provides: fix, loop, review, gate, goal, gtd, feedback, ...
    ```
 
 Claude Code continues to work in the same repository with its original
