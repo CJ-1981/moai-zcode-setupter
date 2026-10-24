@@ -77,14 +77,15 @@ class SetupWorker(QThread):
     finished_report = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, target: str, categories: set[str]):
+    def __init__(self, target: str, categories: set[str], skill_targets: set[str]):
         super().__init__()
         self.target = target
         self.categories = categories
+        self.skill_targets = skill_targets
 
     def run(self) -> None:
         try:
-            report = setup_project(self.target, self.categories)
+            report = setup_project(self.target, self.categories, self.skill_targets)
         except Exception as exc:  # surfaced in the log pane
             self.failed.emit(f"{type(exc).__name__}: {exc}")
             return
@@ -167,6 +168,9 @@ class MainWindow(QMainWindow):
         layout.addLayout(row)
         layout.addWidget(self.status_label)
 
+        self.antigravity_cb = QCheckBox(
+            "Also port skills for Antigravity (.agents/skills)")
+        layout.addWidget(self.antigravity_cb)
         layout.addWidget(QLabel(
             "Skill categories to copy (foundation & workflow are always included):"))
         self.boxes: dict[str, QCheckBox] = {}
@@ -282,11 +286,15 @@ class MainWindow(QMainWindow):
     def _start_setup(self, target: str) -> None:
         categories = {cat for cat, cb in self.boxes.items() if cb.isChecked()}
         categories |= REQUIRED_CATEGORIES
+        skill_targets = {"zcode"}
+        if self.antigravity_cb.isChecked():
+            skill_targets.add("antigravity")
         self.run_btn.setEnabled(False)
         self.clean_btn.setEnabled(False)
         self.log.appendPlainText(
-            f"=== Setting up {target} (categories: {sorted(categories)}) ===")
-        self.worker = SetupWorker(target, categories)
+            f"=== Setting up {target} (categories: {sorted(categories)}; "
+            f"targets: {sorted(skill_targets)}) ===")
+        self.worker = SetupWorker(target, categories, skill_targets)
         self.worker.finished_report.connect(self.on_done)
         self.worker.failed.connect(self.on_fail)
         self.worker.start()

@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 LEGACY_MOAI_BIN = os.path.expanduser("~/.local/bin/moai-adk")
 CLONE_CACHE = os.path.expanduser("~/.moai-zcode-setupter/moai-adk-src")
 MOAI_REPO = "https://github.com/modu-ai/moai-adk.git"
-SETUPTER_VERSION = "0.4.1"
+SETUPTER_VERSION = "0.5.0"
 
 # Title of the 0.34-era CLAUDE.md; used to detect a legacy file that v3 init
 # preserved instead of replacing.
@@ -284,13 +284,16 @@ def _skill_category(name: str) -> str | None:
     return None
 
 
-def copy_skills_from(src_root: str, target: str, categories: set[str], report: SetupReport) -> None:
+def copy_skills_from(
+    src_root: str, target: str, categories: set[str], report: SetupReport,
+    dst_subdir: str = os.path.join(".zcode", "skills"),
+) -> None:
     """Copy moai skills from a .claude/skills (or templates) root.
 
-    Also removes stale moai-* skills in .zcode/skills/ that no longer exist
+    Also removes stale moai-* skills in the destination that no longer exist
     in the source (e.g. 0.34-era skills after upgrading to v3).
     """
-    dst_root = os.path.join(target, ".zcode", "skills")
+    dst_root = os.path.join(target, *dst_subdir.split("/"))
     if not os.path.isdir(src_root):
         report.warnings.append(f"Skills source not found: {src_root}")
         return
@@ -325,11 +328,14 @@ def copy_skills_from(src_root: str, target: str, categories: set[str], report: S
                 stale.append(name)
     if stale:
         report.log(f"Removed {len(stale)} stale skills: {', '.join(stale)}")
-    report.log(f"Copied {len(report.copied_skills)} skills to .zcode/skills/")
+    report.log(f"Copied {len(report.copied_skills)} skills to {dst_subdir}")
 
 
-def convert_commands_from(src_root: str, target: str, report: SetupReport) -> None:
-    dst_root = os.path.join(target, ".zcode", "skills")
+def convert_commands_from(
+    src_root: str, target: str, report: SetupReport,
+    dst_subdir: str = os.path.join(".zcode", "skills"),
+) -> None:
+    dst_root = os.path.join(target, *dst_subdir.split("/"))
     if not os.path.isdir(src_root):
         report.warnings.append(f"Commands source not found: {src_root}")
         return
@@ -377,12 +383,17 @@ ZCODE_GITIGNORE_BLOCK = """\
 .zcode/settings.local*
 .zcode/*.local.*
 
-# ZCode skills secrets (mirror moai-adk's .claude/skills rules)
+# Ported skills secrets (mirror moai-adk's .claude/skills rules)
 .zcode/skills/*/.env*
 .zcode/skills/*/secrets/
 .zcode/skills/*/*/*secret*
 .zcode/skills/*/*/*key*
 .zcode/skills/*/*/*token*
+.agents/skills/*/.env*
+.agents/skills/*/secrets/
+.agents/skills/*/*/*secret*
+.agents/skills/*/*/*key*
+.agents/skills/*/*/*token*
 """
 
 
@@ -481,7 +492,21 @@ def _find_legacy_templates() -> str:
     return matches[-1]
 
 
-def setup_project(target: str, categories: set[str]) -> SetupReport:
+# Skill destination subdirs (relative to project root) per tool target.
+SKILL_TARGET_DIRS = {
+    "zcode": os.path.join(".zcode", "skills"),
+    "antigravity": os.path.join(".agents", "skills"),
+}
+
+
+def setup_project(
+    target: str, categories: set[str], skill_targets: set[str] | None = None
+) -> SetupReport:
+    skill_targets = skill_targets or {"zcode"}
+    unknown = skill_targets - set(SKILL_TARGET_DIRS)
+    if unknown:
+        raise ValueError(f"Unknown skill targets: {sorted(unknown)}")
+    dst_subdirs = [SKILL_TARGET_DIRS[t] for t in sorted(skill_targets)]
     report = SetupReport(target=target)
     if not os.path.isdir(target):
         raise NotADirectoryError(target)
@@ -503,14 +528,16 @@ def setup_project(target: str, categories: set[str]) -> SetupReport:
         # Also include user-folder skills deployed by init (~/.claude/skills),
         # since common moai skills live there in v3.
         user_skills = os.path.expanduser("~/.claude/skills")
-        if os.path.isdir(src_skills):
-            copy_skills_from(src_skills, target, categories, report)
+        if os.path.isdir(src_skills) or os.path.isdir(user_skills):
+            src = src_skills if os.path.isdir(src_skills) else user_skills
+            if src == user_skills:
+                report.log("Project had no skills; using ~/.claude/skills")
+            for d in dst_subdirs:
+                copy_skills_from(src, target, categories, report, dst_subdir=d)
         else:
             report.warnings.append("No .claude/skills in project after init.")
-        if os.path.isdir(user_skills) and not report.copied_skills:
-            report.log("Project had no skills; falling back to ~/.claude/skills")
-            copy_skills_from(user_skills, target, categories, report)
-        convert_commands_from(src_cmds, target, report)
+        for d in dst_subdirs:
+            convert_commands_from(src_cmds, target, report, dst_subdir=d)
         refresh_legacy_claude_md(target, binpath, report)
         derive_agents_md(target, report)
     elif kind == "legacy":
@@ -538,10 +565,13 @@ def setup_project(target: str, categories: set[str]) -> SetupReport:
             with open(dst, "w") as f:
                 f.write(note + text)
             report.log("Created AGENTS.md (from CLAUDE.md template)")
-        copy_skills_from(os.path.join(templates, ".claude", "skills"), target, categories, report)
-        convert_commands_from(
-            os.path.join(templates, ".claude", "commands", "moai"), target, report
-        )
+        for d in dst_subdirs:
+            copy_skills_from(
+                os.path.join(templates, ".claude", "skills"), target, categories, report, dst_subdir=d
+            )
+            convert_commands_from(
+                os.path.join(templates, ".claude", "commands", "moai"), target, report, dst_subdir=d
+            )
     else:
         # No moai-adk installed: read-only port from a GitHub clone.
         report.log("No moai-adk installation found; porting from GitHub clone (no init).")
@@ -553,8 +583,13 @@ def setup_project(target: str, categories: set[str]) -> SetupReport:
         if clone is None:
             raise RuntimeError("Could not clone moai-adk repo and no local install exists.")
         report.log(f"Using templates from clone at {clone}")
-        copy_skills_from(os.path.join(clone, ".claude", "skills"), target, categories, report)
-        convert_commands_from(os.path.join(clone, ".claude", "commands", "moai"), target, report)
+        for d in dst_subdirs:
+            copy_skills_from(
+                os.path.join(clone, ".claude", "skills"), target, categories, report, dst_subdir=d
+            )
+            convert_commands_from(
+                os.path.join(clone, ".claude", "commands", "moai"), target, report, dst_subdir=d
+            )
         if not os.path.exists(os.path.join(target, "AGENTS.md")):
             tmpl = os.path.join(clone, "internal", "template", "templates", "AGENTS.md.tmpl")
             if os.path.isfile(tmpl):
@@ -646,7 +681,7 @@ CLEAN_ITEMS = {
 
 
 def _skill_is_moai(name: str) -> bool:
-    return name.startswith("moai-")
+    return name == "moai" or name.startswith("moai-")
 
 
 def clean_project(target: str, items: set[str]) -> SetupReport:
@@ -664,20 +699,21 @@ def clean_project(target: str, items: set[str]) -> SetupReport:
         raise ValueError(f"Unknown clean items: {sorted(unknown)}")
 
     if "skills" in items:
-        skills_dir = os.path.join(target, ".zcode", "skills")
         removed = 0
-        if os.path.isdir(skills_dir):
-            for name in sorted(os.listdir(skills_dir)):
-                if _skill_is_moai(name):
-                    shutil.rmtree(os.path.join(skills_dir, name), ignore_errors=True)
-                    removed += 1
-                    report.copied_skills.append(name)
-            if not os.listdir(skills_dir):
-                os.rmdir(skills_dir)
-                zcode = os.path.join(target, ".zcode")
-                if os.path.isdir(zcode) and not os.listdir(zcode):
-                    os.rmdir(zcode)
-        report.log(f"Removed {removed} moai-* skills from .zcode/skills/")
+        for root_rel in ((".zcode", "skills"), (".agents", "skills")):
+            skills_dir = os.path.join(target, *root_rel)
+            if os.path.isdir(skills_dir):
+                for name in sorted(os.listdir(skills_dir)):
+                    if _skill_is_moai(name):
+                        shutil.rmtree(os.path.join(skills_dir, name), ignore_errors=True)
+                        removed += 1
+                        report.copied_skills.append(name)
+                if not os.listdir(skills_dir):
+                    os.rmdir(skills_dir)
+                    parent = os.path.join(target, root_rel[0])
+                    if os.path.isdir(parent) and not os.listdir(parent):
+                        os.rmdir(parent)
+        report.log(f"Removed {removed} moai-* skills from .zcode/skills/ and .agents/skills/")
 
     if "agents_md" in items:
         path = os.path.join(target, "AGENTS.md")

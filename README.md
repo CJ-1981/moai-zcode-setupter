@@ -3,7 +3,8 @@
 A small PySide6 (Qt) desktop app that ports the
 [MoAI-ADK](https://pypi.org/project/moai-adk/) SPEC-First TDD workflow
 (EARS requirements, TRUST-5 quality gates, plan → run → sync) into any git
-project so it can be used from **ZCode**, not just Claude Code.
+project so it can be used from **ZCode** and **Google Antigravity**, not
+just Claude Code.
 
 ![Main window](docs/screenshot-main.png)
 
@@ -40,6 +41,13 @@ In all cases, Claude-specific mechanics are rewritten for ZCode:
 A small ZCode section is appended to `.gitignore`: ported skills and
 `AGENTS.md` are tracked (they are project workflow assets), while local state
 and secret patterns under `.zcode/skills/` are ignored.
+
+### Antigravity support
+
+Tick **"Also port skills for Antigravity"** and the same skills are written
+to `.agents/skills/` — the location Antigravity scans for workspace skills
+(same `SKILL.md` format, slash-invocable, progressive disclosure). Antigravity
+also reads `AGENTS.md` natively, which the setup already maintains.
 
 ### Auto install/update of moai-adk
 
