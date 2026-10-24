@@ -42,12 +42,13 @@ A small ZCode section is appended to `.gitignore`: ported skills and
 `AGENTS.md` are tracked (they are project workflow assets), while local state
 and secret patterns under `.zcode/skills/` are ignored.
 
-### Antigravity support
+### Antigravity / Codex (ChatGPT) support
 
-Tick **"Also port skills for Antigravity"** and the same skills are written
-to `.agents/skills/` — the location Antigravity scans for workspace skills
-(same `SKILL.md` format, slash-invocable, progressive disclosure). Antigravity
-also reads `AGENTS.md` natively, which the setup already maintains.
+Tick **"Also port skills for Antigravity / Codex"** and the same skills are
+written to `.agents/skills/` — the cross-tool skills location scanned by
+Google Antigravity (workspace skills) and OpenAI Codex CLI (project skills).
+Same `SKILL.md` open standard, slash-invocable, progressive disclosure. Both
+tools also read `AGENTS.md` natively, which the setup already maintains.
 
 ### Auto install/update of moai-adk
 

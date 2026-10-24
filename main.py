@@ -169,7 +169,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.status_label)
 
         self.antigravity_cb = QCheckBox(
-            "Also port skills for Antigravity (.agents/skills)")
+            "Also port skills for Antigravity / Codex (.agents/skills)")
         layout.addWidget(self.antigravity_cb)
         layout.addWidget(QLabel(
             "Skill categories to copy (foundation & workflow are always included):"))
