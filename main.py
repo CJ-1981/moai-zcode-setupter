@@ -38,8 +38,10 @@ from porter import (
     claude_running,
     claude_suspended,
     clean_project,
+    download_setupter_update,
     find_moai,
     get_latest_moai_version,
+    get_latest_setupter_version,
     install_or_update_moai,
     git_init,
     resume_moai_claude,
@@ -71,10 +73,15 @@ class LatestVersionWorker(QThread):
     got_latest = Signal(str, str)  # (moai-adk latest, setupter latest)
 
     def run(self) -> None:
-        self.got_latest.emit(
-            get_latest_moai_version() or "unknown",
-            get_latest_setupter_version() or "unknown",
-        )
+        try:
+            moai = get_latest_moai_version() or "unknown"
+        except Exception:
+            moai = "unknown"
+        try:
+            app = get_latest_setupter_version() or "unknown"
+        except Exception:
+            app = "unknown"
+        self.got_latest.emit(moai, app)
 
 
 class SetupWorker(QThread):
