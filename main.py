@@ -66,12 +66,15 @@ class InstallWorker(QThread):
 
 
 class LatestVersionWorker(QThread):
-    """Fetch the latest moai-adk release tag in the background."""
+    """Fetch the latest moai-adk and setupter release tags in the background."""
 
-    got_latest = Signal(str)
+    got_latest = Signal(str, str)  # (moai-adk latest, setupter latest)
 
     def run(self) -> None:
-        self.got_latest.emit(get_latest_moai_version() or "unknown")
+        self.got_latest.emit(
+            get_latest_moai_version() or "unknown",
+            get_latest_setupter_version() or "unknown",
+        )
 
 
 class SetupWorker(QThread):
@@ -216,12 +219,34 @@ class MainWindow(QMainWindow):
             self.folder_edit.setText(folder)
             self._refresh_suspend_label()
 
-    def on_latest(self, latest: str) -> None:
+    def on_latest(self, latest: str, app_latest: str) -> None:
         self.latest_version = None if latest == "unknown" else latest
         kind, installed = find_moai()
+        app_line = f" | app: v{SETUPTER_VERSION}"
+        if app_latest not in ("unknown", SETUPTER_VERSION):
+            app_line += f" (v{app_latest} available)"
         self.status_label.setText(
             f"moai-adk installed: {installed or 'not found'} | latest: {latest}"
+            f"{app_line}"
         )
+        if "available" in app_line:
+            self.log.appendPlainText(
+                f"Setupter update available: v{app_latest} (this app is v{SETUPTER_VERSION})."
+            )
+            answer = QMessageBox.question(
+                self,
+                "Setupter update available",
+                f"A new version (v{app_latest}) of this app is available.\n\n"
+                "Download it now to ~/Downloads? (You then quit this app and "
+                "replace the installed copy manually.)",
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                report = SetupReport(target="(setupter update)")
+                download_setupter_update(report)
+                for line in report.steps:
+                    self.log.appendPlainText(line)
+                for w in report.warnings:
+                    self.log.appendPlainText(f"WARNING: {w}")
 
     def _moai_needs_install(self) -> tuple[bool, str]:
         """(needs_install, reason) — v3 binary missing or older than latest."""

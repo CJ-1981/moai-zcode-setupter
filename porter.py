@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 LEGACY_MOAI_BIN = os.path.expanduser("~/.local/bin/moai-adk")
 CLONE_CACHE = os.path.expanduser("~/.moai-zcode-setupter/moai-adk-src")
 MOAI_REPO = "https://github.com/modu-ai/moai-adk.git"
-SETUPTER_VERSION = "0.5.3"
+SETUPTER_VERSION = "0.6.0"
 
 # Title of the 0.34-era CLAUDE.md; used to detect a legacy file that v3 init
 # preserved instead of replacing.
@@ -104,6 +104,58 @@ def _locate_moai() -> tuple[str | None, str, str | None]:
 
 def _version_tuple(v: str) -> tuple[int, ...]:
     return tuple(int(p) for p in re.findall(r"\d+", v)[:3])
+
+
+SETUPTER_REPO = "CJ-1981/moai-zcode-setupter"
+
+
+def get_latest_setupter_version() -> str | None:
+    """Latest setupter release tag from the GitHub API (None if unreachable)."""
+    import json
+    import urllib.request
+
+    url = f"https://api.github.com/repos/{SETUPTER_REPO}/releases/latest"
+    req = urllib.request.Request(url, headers={"User-Agent": "moai-zcode-setupter"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            tag = json.load(resp).get("tag_name", "")
+    except Exception:
+        return None
+    return tag.lstrip("v") or None
+
+
+def download_setupter_update(report: SetupReport) -> str | None:
+    """Download the latest setupter release archive to ~/Downloads.
+
+    Returns the saved path (the user replaces the installed app manually —
+    a running app cannot safely overwrite itself).
+    """
+    import urllib.request
+
+    asset = (
+        "MoAI-ZCode-Setupter-windows.zip"
+        if os.name == "nt"
+        else "MoAI-ZCode-Setupter-macos.zip"
+    )
+    url = f"https://github.com/{SETUPTER_REPO}/releases/latest/download/{asset}"
+    dst = os.path.expanduser(f"~/Downloads/{asset}")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "moai-zcode-setupter"})
+        with urllib.request.urlopen(req, timeout=120) as resp, open(dst, "wb") as f:
+            while True:
+                chunk = resp.read(1 << 16)
+                if not chunk:
+                    break
+                f.write(chunk)
+    except Exception as exc:
+        report.warnings.append(f"Download failed: {exc}")
+        return None
+    report.log(f"Downloaded latest setupter to {dst}")
+    report.log(
+        "Quit this app, replace the installed copy with the downloaded one, "
+        "and relaunch."
+    )
+    return dst
 
 
 def get_latest_moai_version() -> str | None:
@@ -552,8 +604,23 @@ def setup_project(
     kind, version, binpath = _locate_moai()
 
     if kind == "v3":
-        report.log(f"Found moai-adk v3 binary ({version}); running moai init ...")
-        proc = _run([binpath, "init", "--non-interactive", "--force"], cwd=target)
+        # Existing v3 projects get the preservation-first template merge
+        # (moai update --project, v3.2+); fresh ones get a full init.
+        already_v3 = os.path.isfile(
+            os.path.join(target, ".moai", "config", "sections", "system.yaml")
+        )
+        if already_v3:
+            report.log("Existing v3 project; running moai update --project ...")
+            proc = _run([binpath, "update", "--project", "--yes"], cwd=target)
+            if proc.returncode != 0:
+                report.log(
+                    "update --project failed; falling back to init --force "
+                    "(a backup is made)."
+                )
+                proc = _run([binpath, "init", "--non-interactive", "--force"], cwd=target)
+        else:
+            report.log(f"Found moai-adk v3 binary ({version}); running moai init ...")
+            proc = _run([binpath, "init", "--non-interactive", "--force"], cwd=target)
         out = (proc.stdout + proc.stderr).strip()
         if out:
             report.log(f"moai init:\n{out[-1500:]}")
@@ -638,6 +705,13 @@ def setup_project(
             )
 
     update_gitignore(target, report)
+
+    if kind == "v3":
+        report.log("Running moai doctor ...")
+        proc = _run([binpath, "doctor"], cwd=target)
+        out = (proc.stdout + proc.stderr).strip()
+        if out:
+            report.log(f"moai doctor (tail):\n{out[-1800:]}")
     return report
 
 
