@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 LEGACY_MOAI_BIN = os.path.expanduser("~/.local/bin/moai-adk")
 CLONE_CACHE = os.path.expanduser("~/.moai-zcode-setupter/moai-adk-src")
 MOAI_REPO = "https://github.com/modu-ai/moai-adk.git"
-SETUPTER_VERSION = "0.5.2"
+SETUPTER_VERSION = "0.5.3"
 
 # Title of the 0.34-era CLAUDE.md; used to detect a legacy file that v3 init
 # preserved instead of replacing.
@@ -523,6 +523,16 @@ SKILL_TARGET_DIRS = {
     "zcode": os.path.join(".zcode", "skills"),
     "antigravity": os.path.join(".agents", "skills"),
 }
+
+
+def git_init(target: str, report: SetupReport) -> bool:
+    """Initialize a git repo in an empty (or non-repo) project folder."""
+    proc = _run(["git", "init"], cwd=target)
+    if proc.returncode == 0:
+        report.log("Initialized git repository (git init).")
+        return True
+    report.warnings.append(f"git init failed: {(proc.stderr or '').strip()[:200]}")
+    return False
 
 
 def setup_project(

@@ -41,6 +41,7 @@ from porter import (
     find_moai,
     get_latest_moai_version,
     install_or_update_moai,
+    git_init,
     resume_moai_claude,
     setup_project,
     suspend_moai_claude,
@@ -236,6 +237,21 @@ class MainWindow(QMainWindow):
         if not target:
             self.log.appendPlainText("Please choose a project folder first.")
             return
+        if not os.path.isdir(os.path.join(target, ".git")):
+            answer = QMessageBox.question(
+                self,
+                "Initialize git?",
+                f"{target} is not a git repository.\n\nRun 'git init' there now? "
+                "(Recommended: moai's hooks and the plan/run/sync workflow need git.)",
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                report = SetupReport(target=target)
+                git_init(target, report)
+                for line in report.steps:
+                    self.log.appendPlainText(line)
+                for w in report.warnings:
+                    self.log.appendPlainText(f"WARNING: {w}")
+
         needs, reason = self._moai_needs_install()
         if needs:
             answer = QMessageBox.question(
