@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 LEGACY_MOAI_BIN = os.path.expanduser("~/.local/bin/moai-adk")
 CLONE_CACHE = os.path.expanduser("~/.moai-zcode-setupter/moai-adk-src")
 MOAI_REPO = "https://github.com/modu-ai/moai-adk.git"
-SETUPTER_VERSION = "0.5.0"
+SETUPTER_VERSION = "0.5.1"
 
 # Title of the 0.34-era CLAUDE.md; used to detect a legacy file that v3 init
 # preserved instead of replacing.
@@ -196,13 +196,27 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
 
 
 def clean_skill_md(text: str) -> str:
-    """Strip Claude-only frontmatter keys and rewrite Claude-only mechanics."""
+    """Rewrite frontmatter as guaranteed-valid YAML (name + description only).
+
+    Some upstream SKILL.md files carry extra frontmatter keys that are not
+    valid YAML (empty tags: with unindented continuation lines). Strict
+    parsers (Antigravity) reject those, so only the two standard keys are
+    kept, with the description sanitized onto one quoted line.
+    """
     meta, body = _parse_frontmatter(text)
     body = convert_claude_mechanics(body)
-    if not meta:
+    name = meta.get("name", "").strip()
+    description = meta.get("description", "").strip()
+    # Fold multi-line descriptions and strip characters that break one-line YAML.
+    description = " ".join(description.split()).replace('"', "'")
+    if not name:
         return body
-    keep = {k: v for k, v in meta.items() if k not in ("allowed-tools", "model", "argument-hint")}
-    fm = "---\n" + "\n".join(f"{k}: {v}" for k, v in keep.items()) + "\n---\n"
+    fm = (
+        "---\n"
+        f"name: {name}\n"
+        f'description: "{description}"\n'
+        "---\n"
+    )
     return fm + body
 
 
@@ -260,6 +274,16 @@ SKILL_CATEGORIES = {
 }
 REQUIRED_CATEGORIES = {"foundation", "workflow"}
 
+# 0.34-era skills that no longer exist in v3 but survive in projects
+# (v3 init preserves existing files); never port them.
+LEGACY_STALE_SKILLS = {
+    "moai-foundation-claude",
+    "moai-foundation-context",
+    "moai-foundation-philosopher",
+    "moai-workflow-jit-docs",
+    "moai-workflow-templates",
+}
+
 # Core single-instance v3 skills (no category prefix beyond "moai-");
 # always included alongside the required categories.
 CORE_SINGLE_SKILLS = {
@@ -299,6 +323,8 @@ def copy_skills_from(
         return
     source_names = set()
     for name in sorted(os.listdir(src_root)):
+        if name in LEGACY_STALE_SKILLS:
+            continue
         cat = _skill_category(name)
         if cat is None:  # uncategorized (e.g. the "moai" dispatcher is handled too)
             cat = "workflow" if name == "moai" else None
